@@ -1,0 +1,6 @@
+requests
+python-dateutil
+pytz
+discord.py
+python-decouple
+asyncpg
