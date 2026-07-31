@@ -43,7 +43,8 @@ NEWS_CHANNEL_ID = config("NEWS_CHANNEL_ID", default=None, cast=lambda v: int(v) 
 NEWS_CHANNEL_NAME = config("NEWS_CHANNEL_NAME", default="news")
 GUILD_ID = config("GUILD_ID", default=None, cast=lambda v: int(v) if v else None)
 
-
+# ID пользователей, которым разрешено публиковать панель /post_filter_panel.
+# Через запятую в .env, например: ADMIN_USER_IDS=111111111111111111,222222222222222222
 ADMIN_USER_IDS = config(
     "ADMIN_USER_IDS",
     default="",
@@ -60,6 +61,17 @@ REFRESH_CALENDAR_MINUTES = 60
 THREAD_AUTO_ARCHIVE_MINUTES = 10080         # неделя — максимум, который разрешает Discord
 
 CURRENCY_OPTIONS = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "CNY"]
+CURRENCY_FLAG = {
+    "USD": "🇺🇸",
+    "EUR": "🇪🇺",
+    "GBP": "🇬🇧",
+    "JPY": "🇯🇵",
+    "AUD": "🇦🇺",
+    "NZD": "🇳🇿",
+    "CAD": "🇨🇦",
+    "CHF": "🇨🇭",
+    "CNY": "🇨🇳",
+}
 LEAD_TIME_OPTIONS_MINUTES = [5, 15, 30, 60]  # варианты тайминга персональных уведомлений
 ALL_CURRENCIES_VALUE = "ALL"
 
@@ -389,9 +401,10 @@ class CurrencyFilterSelect(discord.ui.Select):
     """
     def __init__(self):
         options = [
-            discord.SelectOption(label="🌍 Все валюты", value=ALL_CURRENCIES_VALUE),
+            discord.SelectOption(label="Выбрать все", value=ALL_CURRENCIES_VALUE),
         ] + [
-            discord.SelectOption(label=cur, value=cur) for cur in CURRENCY_OPTIONS
+            discord.SelectOption(label=cur, value=cur, emoji=CURRENCY_FLAG[cur])
+            for cur in CURRENCY_OPTIONS
         ]
         super().__init__(
             placeholder="Выберите валюты, которые вам важны...",
@@ -405,7 +418,7 @@ class CurrencyFilterSelect(discord.ui.Select):
         user = interaction.user
 
         if self.values:
-            # если выбрано "Все валюты" — разворачиваем в полный список кодов,
+            # если выбрано "Выбрать все" — разворачиваем в полный список кодов,
             # сам маркер ALL в базу не пишем (иначе сравнение e['country'] сломается)
             if ALL_CURRENCIES_VALUE in self.values:
                 currencies = list(CURRENCY_OPTIONS)
@@ -413,22 +426,13 @@ class CurrencyFilterSelect(discord.ui.Select):
                 currencies = list(self.values)
 
             await _set_currencies(user.id, currencies)
-            thread = await _get_or_create_user_thread(user)
-            chosen = "все валюты" if ALL_CURRENCIES_VALUE in self.values else ", ".join(sorted(currencies))
-            if thread:
-                await interaction.response.send_message(
-                    f"Готово! Подписки: **{chosen}**\nУведомления будут приходить в {thread.mention}",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.response.send_message(
-                    f"Подписки сохранены (**{chosen}**), но не удалось создать тред — "
-                    "проверьте права бота в канале news.",
-                    ephemeral=True,
-                )
+            await _get_or_create_user_thread(user)
         else:
             await _delete_subscription(user.id)
-            await interaction.response.send_message("Подписки отключены.", ephemeral=True)
+
+        # тихое подтверждение: просто перерисовываем ту же панель без изменений,
+        # без всплывающих сообщений и текста — чтобы не флудить
+        await interaction.response.edit_message()
 
 
 class LeadTimeSelect(discord.ui.Select):
@@ -449,12 +453,7 @@ class LeadTimeSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         lead_values = sorted(int(v) for v in self.values) if self.values else []
         await _set_lead_minutes(interaction.user.id, lead_values)
-
-        if lead_values:
-            text = ", ".join(f"{v} мин" for v in lead_values)
-        else:
-            text = "не выбрано — персональные уведомления приостановлены"
-        await interaction.response.send_message(f"Тайминг уведомлений обновлён: **{text}**", ephemeral=True)
+        await interaction.response.edit_message()
 
 
 class CurrencyFilterView(discord.ui.View):
