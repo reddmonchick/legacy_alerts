@@ -17,7 +17,10 @@ pip install requests python-dateutil pytz discord.py python-decouple asyncpg
 
 import asyncio
 import logging
+import os
+import threading
 from datetime import datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import requests
 import pytz
@@ -585,4 +588,21 @@ async def on_ready():
 
 
 if __name__ == "__main__":
+    # Мини веб-сервер для health check (нужен Render free: без него
+    # сервис засыпает и рвёт WebSocket-соединение с Discord).
+    class _HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    port = int(os.environ.get("PORT", "8000"))
+    _health_server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)
+    threading.Thread(target=_health_server.serve_forever, daemon=True).start()
+    log.info("Health check сервер запущен на порту %d", port)
+
     bot.run(DISCORD_TOKEN)
