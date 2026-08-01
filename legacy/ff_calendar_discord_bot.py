@@ -427,18 +427,12 @@ class CurrencyFilterSelect(discord.ui.Select):
         currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
         lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
         embed = discord.Embed(
-            title="📊 Фильтр по валютам",
-            description=(
-                "Выберите ниже валюты, за которыми хотите следить, и тайминг уведомлений — "
-                "и я буду присылать вам уведомления в личную ветку "
-                "перед важными (High Impact) новостями по ним."
-            ),
-            color=discord.Color.blurple(),
+            title="📊 Ваша подписка",
+            description=f"Валюты: **{currencies_text}**\nУведомления: за **{lead_text}**\n\nНовости будут приходить в вашу личную ветку.",
+            color=discord.Color.green(),
         )
-        embed.add_field(name="Ваши валюты", value=currencies_text, inline=True)
-        embed.add_field(name="Уведомления", value=lead_text, inline=True)
         embed.set_footer(text="Выбор сохранён ✅")
-        await interaction.response.edit_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class LeadTimeSelect(discord.ui.Select):
@@ -464,18 +458,12 @@ class LeadTimeSelect(discord.ui.Select):
         currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
         lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
         embed = discord.Embed(
-            title="📊 Фильтр по валютам",
-            description=(
-                "Выберите ниже валюты, за которыми хотите следить, и тайминг уведомлений — "
-                "и я буду присылать вам уведомления в личную ветку "
-                "перед важными (High Impact) новостями по ним."
-            ),
-            color=discord.Color.blurple(),
+            title="⏰ Ваш тайминг уведомлений",
+            description=f"Валюты: **{currencies_text}**\nУведомления: за **{lead_text}**\n\nНовости будут приходить в вашу личную ветку.",
+            color=discord.Color.green(),
         )
-        embed.add_field(name="Ваши валюты", value=currencies_text, inline=True)
-        embed.add_field(name="Уведомления", value=lead_text, inline=True)
         embed.set_footer(text="Выбор сохранён ✅")
-        await interaction.response.edit_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class CurrencyFilterView(discord.ui.View):
