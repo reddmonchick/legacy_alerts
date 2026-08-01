@@ -1,9 +1,3 @@
-databases:
-  - name: ff-calendar-postgres
-    databaseName: ff_calendar
-    user: ff_bot
-    plan: free
-
 services:
   - type: worker
     name: ff-calendar-discord-bot
@@ -17,9 +11,7 @@ services:
       - key: NEWS_CHANNEL_NAME
         value: news
       - key: DATABASE_URL
-        fromDatabase:
-          name: ff-calendar-postgres
-          property: connectionString
+        sync: false
       - key: DISCORD_BOT_TOKEN
         sync: false
       - key: NEWS_CHANNEL_ID
