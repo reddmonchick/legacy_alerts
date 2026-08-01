@@ -419,24 +419,26 @@ class CurrencyFilterSelect(discord.ui.Select):
 
         if self.values:
             await _set_currencies(user.id, list(self.values))
-            thread = await _get_or_create_user_thread(user)
-            if thread is not None:
-                flags = " ".join(CURRENCY_FLAG[c] for c in self.values)
-                currencies_text = ", ".join(self.values)
-                record = await _get_subscription(user.id)
-                lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
-                await thread.send(
-                    f"✅ **Подписка обновлена** {flags}\n"
-                    f"Валюты: **{currencies_text}**\n"
-                    f"Уведомления: за **{lead_text}**"
-                )
+            await _get_or_create_user_thread(user)
         else:
             await _delete_subscription(user.id)
-            await interaction.response.edit_message()
-            return
 
-        # перерисовываем панель без изменений, чтобы не флудить всплывашками
-        await interaction.response.edit_message()
+        record = await _get_subscription(user.id)
+        currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
+        lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
+        embed = discord.Embed(
+            title="📊 Фильтр по валютам",
+            description=(
+                "Выберите ниже валюты, за которыми хотите следить, и тайминг уведомлений — "
+                "и я буду присылать вам уведомления в личную ветку "
+                "перед важными (High Impact) новостями по ним."
+            ),
+            color=discord.Color.blurple(),
+        )
+        embed.add_field(name="Ваши валюты", value=currencies_text, inline=True)
+        embed.add_field(name="Уведомления", value=lead_text, inline=True)
+        embed.set_footer(text="Выбор сохранён ✅")
+        await interaction.response.edit_message(embed=embed)
 
 
 class LeadTimeSelect(discord.ui.Select):
@@ -459,21 +461,21 @@ class LeadTimeSelect(discord.ui.Select):
         await _set_lead_minutes(interaction.user.id, lead_values)
 
         record = await _get_subscription(interaction.user.id)
-        thread_id = record.get("thread_id")
-        if thread_id:
-            try:
-                thread = bot.get_channel(thread_id) or await bot.fetch_channel(thread_id)
-                currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
-                lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
-                await thread.send(
-                    f"⏰ **Тайминг уведомлений обновлён**\n"
-                    f"Валюты: **{currencies_text}**\n"
-                    f"Уведомления: за **{lead_text}**"
-                )
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                log.exception("Не удалось отправить подтверждение тайминга в тред")
-
-        await interaction.response.edit_message()
+        currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
+        lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
+        embed = discord.Embed(
+            title="📊 Фильтр по валютам",
+            description=(
+                "Выберите ниже валюты, за которыми хотите следить, и тайминг уведомлений — "
+                "и я буду присылать вам уведомления в личную ветку "
+                "перед важными (High Impact) новостями по ним."
+            ),
+            color=discord.Color.blurple(),
+        )
+        embed.add_field(name="Ваши валюты", value=currencies_text, inline=True)
+        embed.add_field(name="Уведомления", value=lead_text, inline=True)
+        embed.set_footer(text="Выбор сохранён ✅")
+        await interaction.response.edit_message(embed=embed)
 
 
 class CurrencyFilterView(discord.ui.View):
