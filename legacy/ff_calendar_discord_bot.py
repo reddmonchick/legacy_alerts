@@ -419,12 +419,23 @@ class CurrencyFilterSelect(discord.ui.Select):
 
         if self.values:
             await _set_currencies(user.id, list(self.values))
-            await _get_or_create_user_thread(user)
+            thread = await _get_or_create_user_thread(user)
+            if thread is not None:
+                flags = " ".join(CURRENCY_FLAG[c] for c in self.values)
+                currencies_text = ", ".join(self.values)
+                record = await _get_subscription(user.id)
+                lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
+                await thread.send(
+                    f"✅ **Подписка обновлена** {flags}\n"
+                    f"Валюты: **{currencies_text}**\n"
+                    f"Уведомления: за **{lead_text}**"
+                )
         else:
             await _delete_subscription(user.id)
+            await interaction.response.edit_message()
+            return
 
-        # тихое подтверждение: просто перерисовываем ту же панель без изменений,
-        # без всплывающих сообщений и текста — чтобы не флудить
+        # перерисовываем панель без изменений, чтобы не флудить всплывашками
         await interaction.response.edit_message()
 
 
@@ -446,6 +457,22 @@ class LeadTimeSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         lead_values = sorted(int(v) for v in self.values) if self.values else []
         await _set_lead_minutes(interaction.user.id, lead_values)
+
+        record = await _get_subscription(interaction.user.id)
+        thread_id = record.get("thread_id")
+        if thread_id:
+            try:
+                thread = bot.get_channel(thread_id) or await bot.fetch_channel(thread_id)
+                currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
+                lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
+                await thread.send(
+                    f"⏰ **Тайминг уведомлений обновлён**\n"
+                    f"Валюты: **{currencies_text}**\n"
+                    f"Уведомления: за **{lead_text}**"
+                )
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                log.exception("Не удалось отправить подтверждение тайминга в тред")
+
         await interaction.response.edit_message()
 
 
