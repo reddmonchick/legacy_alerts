@@ -258,7 +258,7 @@ class CalendarBot(commands.Bot):
         await _init_db()
         # регистрируем persistent view заново после каждого рестарта,
         # чтобы старое закреплённое сообщение с меню продолжало работать
-        self.add_view(CurrencyFilterView())
+        self.add_view(FilterPanelView())
 
 
 bot = CalendarBot(command_prefix="!", intents=intents)
@@ -393,40 +393,20 @@ async def _notify_subscribers(e: dict, now: datetime) -> None:
         _posted_user_keys.clear()
 
 
-# ── Панель выбора валют (постоянное меню, без слэш-команд для юзера) ──
+# ── Панель выбора валют ──
 
-# Кэш личных подтверждений: user_id -> ephemeral message.
-# Переиспользуем одно сообщение, чтобы не плодить флуд.
-_confirm_messages: dict[int, discord.Message] = {}
-
-
-async def _upsert_confirmation(interaction: discord.Interaction) -> None:
-    """Показывает/обновляет одно личное подтверждение подписки для пользователя."""
-    record = await _get_subscription(interaction.user.id)
+async def _subscription_embed(user_id: int) -> discord.Embed:
+    """Карточка подписки пользователя (для личного меню)."""
+    record = await _get_subscription(user_id)
     currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
     lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
     embed = discord.Embed(
         title="📊 Ваша подписка",
-        description=(
-            f"Валюты: **{currencies_text}**\n"
-            f"Уведомления: за **{lead_text}**\n\n"
-            "Новости будут приходить в вашу личную ветку."
-        ),
+        description=f"Валюты: **{currencies_text}**\nУведомления: за **{lead_text}**\n\nНовости будут приходить в вашу личную ветку.",
         color=discord.Color.green(),
     )
-    embed.set_footer(text="Выбор сохранён ✅")
-
-    old = _confirm_messages.get(interaction.user.id)
-    if old is not None:
-        try:
-            await old.edit(embed=embed)
-            await interaction.response.defer(ephemeral=True)
-            return
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            _confirm_messages.pop(interaction.user.id, None)
-
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-    _confirm_messages[interaction.user.id] = await interaction.original_response()
+    embed.set_footer(text="Выбор сохраняется автоматически")
+    return embed
 
 
 class CurrencyFilterSelect(discord.ui.Select):
@@ -457,7 +437,8 @@ class CurrencyFilterSelect(discord.ui.Select):
         else:
             await _delete_subscription(user.id)
 
-        await _upsert_confirmation(interaction)
+        embed = await _subscription_embed(user.id)
+        await interaction.response.edit_message(embed=embed, view=self.view)
 
 
 class LeadTimeSelect(discord.ui.Select):
@@ -478,14 +459,37 @@ class LeadTimeSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         lead_values = sorted(int(v) for v in self.values) if self.values else []
         await _set_lead_minutes(interaction.user.id, lead_values)
-        await _upsert_confirmation(interaction)
+        embed = await _subscription_embed(interaction.user.id)
+        await interaction.response.edit_message(embed=embed, view=self.view)
 
 
-class CurrencyFilterView(discord.ui.View):
+class PersonalMenuView(discord.ui.View):
+    """Личное меню подписки — отправляется только нажавшему (ephemeral)."""
     def __init__(self):
         super().__init__(timeout=None)  # timeout=None обязателен для persistent view
         self.add_item(CurrencyFilterSelect())
         self.add_item(LeadTimeSelect())
+
+
+class SubscribeButton(discord.ui.Button):
+    """Кнопка в общей панели: открывает личное меню подписки для нажавшего."""
+    def __init__(self):
+        super().__init__(
+            label="⚙️ Настроить подписку",
+            style=discord.ButtonStyle.primary,
+            custom_id="ff_subscribe_button",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        embed = await _subscription_embed(interaction.user.id)
+        await interaction.response.send_message(embed=embed, view=PersonalMenuView(), ephemeral=True)
+
+
+class FilterPanelView(discord.ui.View):
+    """Общая панель в канале — только кнопка, личного в ней ничего нет."""
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(SubscribeButton())
 
 
 @bot.tree.command(
@@ -507,15 +511,14 @@ async def post_filter_panel_cmd(interaction: discord.Interaction):
         return
 
     embed = discord.Embed(
-        title="📊 Фильтр по валютам",
+        title="📊 Экономический календарь",
         description=(
-            "Выберите ниже валюты, за которыми хотите следить, и тайминг уведомлений — "
-            "и я буду присылать вам уведомления в личную ветку "
-            "перед важными (High Impact) новостями по ним."
+            "Хотите получать уведомления о важных (High Impact) новостях по выбранным валютам? "
+            "Нажмите кнопку ниже — настройки откроются лично для вас."
         ),
         color=discord.Color.blurple(),
     )
-    msg = await _news_channel.send(embed=embed, view=CurrencyFilterView())
+    msg = await _news_channel.send(embed=embed, view=FilterPanelView())
     try:
         await msg.pin()
     except discord.HTTPException:
