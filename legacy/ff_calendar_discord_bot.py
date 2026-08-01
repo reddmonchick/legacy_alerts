@@ -416,9 +416,10 @@ class CurrencyFilterSelect(discord.ui.Select):
     что делает view persistent: после рестарта бот регистрирует
     её заново в setup_hook, и старое сообщение продолжает работать.
     """
-    def __init__(self):
+    def __init__(self, defaults: list[str] | None = None):
+        defaults = defaults or []
         options = [
-            discord.SelectOption(label=cur, value=cur, emoji=CURRENCY_FLAG[cur])
+            discord.SelectOption(label=cur, value=cur, emoji=CURRENCY_FLAG[cur], default=cur in defaults)
             for cur in CURRENCY_OPTIONS
         ]
         super().__init__(
@@ -439,14 +440,16 @@ class CurrencyFilterSelect(discord.ui.Select):
             await _delete_subscription(user.id)
 
         embed = await _subscription_embed(user.id)
-        await interaction.response.edit_message(embed=embed, view=self.view)
+        view = await PersonalMenuView.for_user(user.id)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class LeadTimeSelect(discord.ui.Select):
     """Выбор одного или нескольких таймингов для персональных уведомлений."""
-    def __init__(self):
+    def __init__(self, defaults: list[str] | None = None):
+        defaults = defaults or []
         options = [
-            discord.SelectOption(label=f"За {m} мин.", value=str(m))
+            discord.SelectOption(label=f"За {m} мин.", value=str(m), default=str(m) in defaults)
             for m in LEAD_TIME_OPTIONS_MINUTES
         ]
         super().__init__(
@@ -461,15 +464,22 @@ class LeadTimeSelect(discord.ui.Select):
         lead_values = sorted(int(v) for v in self.values) if self.values else []
         await _set_lead_minutes(interaction.user.id, lead_values)
         embed = await _subscription_embed(interaction.user.id)
-        await interaction.response.edit_message(embed=embed, view=self.view)
+        view = await PersonalMenuView.for_user(interaction.user.id)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class PersonalMenuView(discord.ui.View):
     """Личное меню подписки — отправляется только нажавшему (ephemeral)."""
-    def __init__(self):
+    def __init__(self, currency_defaults: list[str] | None = None, lead_defaults: list[str] | None = None):
         super().__init__(timeout=None)  # timeout=None обязателен для persistent view
-        self.add_item(CurrencyFilterSelect())
-        self.add_item(LeadTimeSelect())
+        self.add_item(CurrencyFilterSelect(currency_defaults))
+        self.add_item(LeadTimeSelect(lead_defaults))
+
+    @classmethod
+    async def for_user(cls, user_id: int) -> "PersonalMenuView":
+        """Собирает меню с уже отмеченными текущими выборами пользователя."""
+        record = await _get_subscription(user_id)
+        return cls(record["currencies"], [str(m) for m in record["lead_minutes"]])
 
 
 class SubscribeButton(discord.ui.Button):
@@ -483,7 +493,8 @@ class SubscribeButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         embed = await _subscription_embed(interaction.user.id)
-        await interaction.response.send_message(embed=embed, view=PersonalMenuView(), ephemeral=True)
+        view = await PersonalMenuView.for_user(interaction.user.id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class FilterPanelView(discord.ui.View):
