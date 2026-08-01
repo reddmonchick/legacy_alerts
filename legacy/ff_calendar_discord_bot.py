@@ -259,6 +259,7 @@ class CalendarBot(commands.Bot):
         # регистрируем persistent view заново после каждого рестарта,
         # чтобы старое закреплённое сообщение с меню продолжало работать
         self.add_view(FilterPanelView())
+        self.add_view(PersonalMenuView())
 
 
 bot = CalendarBot(command_prefix="!", intents=intents)
