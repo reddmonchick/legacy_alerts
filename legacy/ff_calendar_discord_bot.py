@@ -73,7 +73,6 @@ CURRENCY_FLAG = {
     "CNY": "🇨🇳",
 }
 LEAD_TIME_OPTIONS_MINUTES = [5, 15, 30, 60]  # варианты тайминга персональных уведомлений
-ALL_CURRENCIES_VALUE = "ALL"
 
 HEADERS = {
     "User-Agent": (
@@ -401,8 +400,6 @@ class CurrencyFilterSelect(discord.ui.Select):
     """
     def __init__(self):
         options = [
-            discord.SelectOption(label="Выбрать все", value=ALL_CURRENCIES_VALUE),
-        ] + [
             discord.SelectOption(label=cur, value=cur, emoji=CURRENCY_FLAG[cur])
             for cur in CURRENCY_OPTIONS
         ]
@@ -418,14 +415,7 @@ class CurrencyFilterSelect(discord.ui.Select):
         user = interaction.user
 
         if self.values:
-            # если выбрано "Выбрать все" — разворачиваем в полный список кодов,
-            # сам маркер ALL в базу не пишем (иначе сравнение e['country'] сломается)
-            if ALL_CURRENCIES_VALUE in self.values:
-                currencies = list(CURRENCY_OPTIONS)
-            else:
-                currencies = list(self.values)
-
-            await _set_currencies(user.id, currencies)
+            await _set_currencies(user.id, list(self.values))
             await _get_or_create_user_thread(user)
         else:
             await _delete_subscription(user.id)
