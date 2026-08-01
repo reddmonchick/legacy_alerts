@@ -395,6 +395,40 @@ async def _notify_subscribers(e: dict, now: datetime) -> None:
 
 # ── Панель выбора валют (постоянное меню, без слэш-команд для юзера) ──
 
+# Кэш личных подтверждений: user_id -> ephemeral message.
+# Переиспользуем одно сообщение, чтобы не плодить флуд.
+_confirm_messages: dict[int, discord.Message] = {}
+
+
+async def _upsert_confirmation(interaction: discord.Interaction) -> None:
+    """Показывает/обновляет одно личное подтверждение подписки для пользователя."""
+    record = await _get_subscription(interaction.user.id)
+    currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
+    lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
+    embed = discord.Embed(
+        title="📊 Ваша подписка",
+        description=(
+            f"Валюты: **{currencies_text}**\n"
+            f"Уведомления: за **{lead_text}**\n\n"
+            "Новости будут приходить в вашу личную ветку."
+        ),
+        color=discord.Color.green(),
+    )
+    embed.set_footer(text="Выбор сохранён ✅")
+
+    old = _confirm_messages.get(interaction.user.id)
+    if old is not None:
+        try:
+            await old.edit(embed=embed)
+            await interaction.response.defer(ephemeral=True)
+            return
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            _confirm_messages.pop(interaction.user.id, None)
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    _confirm_messages[interaction.user.id] = await interaction.original_response()
+
+
 class CurrencyFilterSelect(discord.ui.Select):
     """
     custom_id фиксированный (не привязан к пользователю) — это то,
@@ -423,16 +457,7 @@ class CurrencyFilterSelect(discord.ui.Select):
         else:
             await _delete_subscription(user.id)
 
-        record = await _get_subscription(user.id)
-        currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
-        lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
-        embed = discord.Embed(
-            title="📊 Ваша подписка",
-            description=f"Валюты: **{currencies_text}**\nУведомления: за **{lead_text}**\n\nНовости будут приходить в вашу личную ветку.",
-            color=discord.Color.green(),
-        )
-        embed.set_footer(text="Выбор сохранён ✅")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await _upsert_confirmation(interaction)
 
 
 class LeadTimeSelect(discord.ui.Select):
@@ -453,17 +478,7 @@ class LeadTimeSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         lead_values = sorted(int(v) for v in self.values) if self.values else []
         await _set_lead_minutes(interaction.user.id, lead_values)
-
-        record = await _get_subscription(interaction.user.id)
-        currencies_text = ", ".join(record["currencies"]) if record["currencies"] else "не выбраны"
-        lead_text = ", ".join(f"{m} мин" for m in sorted(record["lead_minutes"])) or "не выбрано"
-        embed = discord.Embed(
-            title="⏰ Ваш тайминг уведомлений",
-            description=f"Валюты: **{currencies_text}**\nУведомления: за **{lead_text}**\n\nНовости будут приходить в вашу личную ветку.",
-            color=discord.Color.green(),
-        )
-        embed.set_footer(text="Выбор сохранён ✅")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await _upsert_confirmation(interaction)
 
 
 class CurrencyFilterView(discord.ui.View):
