@@ -57,6 +57,11 @@ ADMIN_USER_IDS = config(
 # postgresql://user:password@host:5432/dbname
 DATABASE_URL = config("DATABASE_URL")
 
+# Публичный URL сервиса (напр. https://xxx.onrender.com). Если задан,
+# бот сам пингует его каждые 10 минут, чтобы бесплатный инстанс Render
+# не уснул по бездействию (не даём ему "входящий трафик").
+SELF_PING_URL = config("SELF_PING_URL", default=None)
+
 MIN_IMPACT = "High"
 LEAD_TIME = timedelta(hours=1)              # фиксированный тайминг для общего канала news
 CHECK_INTERVAL_SECONDS = 60
@@ -569,6 +574,17 @@ async def refresh_calendar_task():
         log.exception("Не удалось обновить календарь")
 
 
+@tasks.loop(minutes=10)
+async def keepalive_ping_task():
+    if not SELF_PING_URL:
+        return
+    try:
+        resp = requests.get(SELF_PING_URL, timeout=30)
+        log.debug("Keep-alive пинг: HTTP %d", resp.status_code)
+    except Exception:
+        log.warning("Keep-alive пинг не удался для %s", SELF_PING_URL)
+
+
 @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
 async def check_and_post_task():
     global _news_channel
@@ -632,6 +648,8 @@ async def on_ready():
         refresh_calendar_task.start()
     if not check_and_post_task.is_running():
         check_and_post_task.start()
+    if not keepalive_ping_task.is_running():
+        keepalive_ping_task.start()
 
 
 if __name__ == "__main__":
