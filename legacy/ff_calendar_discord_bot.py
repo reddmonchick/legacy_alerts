@@ -441,17 +441,17 @@ class CurrencyFilterSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        user = interaction.user
-
-        if self.values:
-            await _set_currencies(user.id, list(self.values))
-            await _get_or_create_user_thread(user)
-        else:
-            await _delete_subscription(user.id)
-
-        embed = await _subscription_embed(user.id)
-        view = await PersonalMenuView.for_user(user.id)
-        await interaction.response.edit_message(embed=embed, view=view)
+      user = interaction.user
+  
+      if self.values:
+          await _set_currencies(user.id, list(self.values))
+          await _get_or_create_user_thread(user)
+      else:
+          await _set_currencies(user.id, [])   # просто очищаем валюты, thread_id остаётся в БД
+  
+      embed = await _subscription_embed(user.id)
+      view = await PersonalMenuView.for_user(user.id)
+      await interaction.response.edit_message(embed=embed, view=view)
 
 
 class LeadTimeSelect(discord.ui.Select):
