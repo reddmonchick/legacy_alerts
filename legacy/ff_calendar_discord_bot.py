@@ -329,20 +329,25 @@ async def _get_or_create_user_thread(user: discord.abc.User) -> discord.Thread |
                 thread = None
 
     if thread is None:
-        thread_name = f"news-{user.name}"[:100]
-        try:
-            thread = await _news_channel.create_thread(
-                name=thread_name,
-                type=discord.ChannelType.public_thread,
-                auto_archive_duration=THREAD_AUTO_ARCHIVE_MINUTES,
-            )
-            await thread.add_user(user)
-        except discord.HTTPException:
-            log.exception("Не удалось создать тред для %s", user)
-            return None
-
-        await _delete_thread_created_notice()
-        await _set_thread_id(user.id, thread.id)
+      thread_name = f"news-{user.name}"[:100]
+      try:
+          thread = await _news_channel.create_thread(
+              name=thread_name,
+              type=discord.ChannelType.public_thread,
+              auto_archive_duration=THREAD_AUTO_ARCHIVE_MINUTES,
+          )
+      except discord.HTTPException:
+          log.exception("Не удалось создать тред для %s", user)
+          return None
+  
+      await _set_thread_id(user.id, thread.id)   # сохраняем СРАЗУ, до add_user
+      await _delete_thread_created_notice()
+  
+      try:
+          await thread.add_user(user)
+      except discord.HTTPException:
+          log.warning("Не удалось добавить %s в тред, но тред сохранён", user)
+        
     elif getattr(thread, "archived", False):
         try:
             await thread.edit(archived=False)
