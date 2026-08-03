@@ -442,7 +442,9 @@ class CurrencyFilterSelect(discord.ui.Select):
             await _set_currencies(user.id, list(self.values))
             await _get_or_create_user_thread(user)
         else:
-            await _delete_subscription(user.id)
+            # Не удаляем строку целиком, а только очищаем валюты —
+            # иначе теряется thread_id и при повторном выборе создаётся новый тред.
+            await _set_currencies(user.id, [])
 
         embed = await _subscription_embed(user.id)
         view = await PersonalMenuView.for_user(user.id)
@@ -509,6 +511,61 @@ class FilterPanelView(discord.ui.View):
         self.add_item(SubscribeButton())
 
 
+def _panel_embed() -> discord.Embed:
+    """Карточка общей панели в канале news."""
+    return discord.Embed(
+        title="📊 Экономический календарь",
+        description=(
+            "⚠️ С первого раза может появиться ошибка — просто повторите действие.\n\n"
+            "Хотите получать уведомления о важных (High Impact) новостях по выбранным валютам? "
+            "Нажмите кнопку ниже — настройки откроются лично для вас."
+        ),
+        color=discord.Color.blurple(),
+    )
+
+
+async def _refresh_panel_on_startup() -> None:
+    """
+    При старте бота проверяет закреплённую панель в канале news:
+    если это старая версия карточки (без предупреждения про ошибку) —
+    удаляет её и публикует новую, чтобы обновление текста применялось
+    без ручного перезапуска команды /post_filter_panel.
+    """
+    global _news_channel
+    if _news_channel is None:
+        _news_channel = await _resolve_news_channel()
+    if _news_channel is None:
+        log.warning("Канал news не найден — пропускаю обновление панели")
+        return
+
+    HINT = "С первого раза может появиться ошибка"
+    try:
+        pinned = await _news_channel.pins()
+    except discord.HTTPException:
+        log.exception("Не удалось получить закреплённые сообщения в news")
+        return
+
+    for msg in pinned:
+        if msg.author != bot.user or not msg.embeds:
+            continue
+        embed = msg.embeds[0]
+        if embed.title != "📊 Экономический календарь":
+            continue
+        if HINT in (embed.description or ""):
+            return
+        try:
+            await msg.delete()
+            new_msg = await _news_channel.send(embed=_panel_embed(), view=FilterPanelView())
+            try:
+                await new_msg.pin()
+            except discord.HTTPException:
+                log.warning("Не удалось закрепить обновлённую панель — закрепите её вручную")
+            log.info("Панель в news обновлена на новую версию")
+        except discord.HTTPException:
+            log.exception("Не удалось заменить панель в news")
+        return
+
+
 @bot.tree.command(
     name="post_filter_panel",
     description="Опубликовать в канале news панель выбора валют для подписки",
@@ -527,14 +584,7 @@ async def post_filter_panel_cmd(interaction: discord.Interaction):
         await interaction.response.send_message("Канал news не найден.", ephemeral=True)
         return
 
-    embed = discord.Embed(
-        title="📊 Экономический календарь",
-        description=(
-            "Хотите получать уведомления о важных (High Impact) новостях по выбранным валютам? "
-            "Нажмите кнопку ниже — настройки откроются лично для вас."
-        ),
-        color=discord.Color.blurple(),
-    )
+    embed = _panel_embed()
     msg = await _news_channel.send(embed=embed, view=FilterPanelView())
     try:
         await msg.pin()
@@ -650,6 +700,8 @@ async def on_ready():
         check_and_post_task.start()
     if not keepalive_ping_task.is_running():
         keepalive_ping_task.start()
+
+    await _refresh_panel_on_startup()
 
 
 if __name__ == "__main__":
