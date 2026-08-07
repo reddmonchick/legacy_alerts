@@ -63,7 +63,6 @@ DATABASE_URL = config("DATABASE_URL")
 SELF_PING_URL = config("SELF_PING_URL", default=None)
 
 MIN_IMPACT = "High"
-LEAD_TIME = timedelta(hours=1)              # фиксированный тайминг для общего канала news
 CHECK_INTERVAL_SECONDS = 60
 REFRESH_CALENDAR_MINUTES = 60
 THREAD_AUTO_ARCHIVE_MINUTES = 10080         # неделя — максимум, который разрешает Discord
@@ -270,7 +269,6 @@ class CalendarBot(commands.Bot):
 bot = CalendarBot(command_prefix="!", intents=intents)
 
 _events_cache: list[dict] = []
-_posted_keys: set[tuple] = set()
 _posted_user_keys: set[tuple] = set()  # (user_id, event_key, lead_minutes) — дедуп персональных увед.
 _news_channel: discord.TextChannel | None = None
 
@@ -647,7 +645,6 @@ async def check_and_post_task():
         _news_channel = await _resolve_news_channel()
 
     now = datetime.now(TARGET_TZ)
-    window_start = LEAD_TIME - timedelta(seconds=CHECK_INTERVAL_SECONDS)
 
     impact_order = {"Low": 0, "Medium": 1, "High": 2, "Holiday": -1}
     threshold = impact_order.get(MIN_IMPACT, 2)
@@ -656,26 +653,8 @@ async def check_and_post_task():
         if impact_order.get(e.get("impact"), -1) < threshold:
             continue
 
-        # публикация в общий канал news — всегда за фиксированный LEAD_TIME (1 час)
-        key = _event_key(e)
-        if key not in _posted_keys:
-            delta = e["datetime"] - now
-            if window_start <= delta <= LEAD_TIME:
-                if _news_channel is not None:
-                    try:
-                        await _news_channel.send(embed=_make_embed(e))
-                    except discord.HTTPException:
-                        log.exception("Ошибка отправки сообщения в канал")
-                else:
-                    log.warning("Канал news не найден — пропускаю публикацию в канал")
-                _posted_keys.add(key)
-                log.info("Опубликовано в канал: %s (%s)", e["title"], e["country"])
-
-        # персональные уведомления — независимо, по индивидуальным таймингам пользователей
+        # публикация только в персональные ветки, по индивидуальным таймингам пользователей
         await _notify_subscribers(e, now)
-
-    if len(_posted_keys) > 500:
-        _posted_keys.clear()
 
 
 @refresh_calendar_task.before_loop
