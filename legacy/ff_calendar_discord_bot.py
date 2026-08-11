@@ -571,6 +571,35 @@ async def _refresh_panel_on_startup() -> None:
         return
 
 
+async def _clean_old_news_on_startup() -> None:
+    """
+    Одноразовая чистка при старте: удаляет в канале news все старые сообщения
+    бота (новости, оставшиеся до апдейта), кроме закреплённой панели настроек.
+    Бот больше не постит новости в этот канал, поэтому повторные старты
+    удалять уже нечего.
+    """
+    global _news_channel
+    if _news_channel is None:
+        _news_channel = await _resolve_news_channel()
+    if _news_channel is None:
+        log.warning("Канал news не найден — пропускаю очистку старых новостей")
+        return
+
+    try:
+        pinned_ids = {m.id for m in await _news_channel.pins()}
+        deleted = await _news_channel.purge(
+            limit=None,
+            bulk=False,
+            check=lambda m: m.author == bot.user and m.id not in pinned_ids,
+        )
+        if deleted:
+            log.info("Очистка канала news: удалено %d старых сообщений", len(deleted))
+    except discord.Forbidden:
+        log.warning("Нет прав на удаление сообщений в news — очистка старых новостей не выполнена")
+    except discord.HTTPException:
+        log.exception("Ошибка при очистке канала news")
+
+
 @bot.tree.command(
     name="post_filter_panel",
     description="Опубликовать в канале news панель выбора валют для подписки",
@@ -597,38 +626,6 @@ async def post_filter_panel_cmd(interaction: discord.Interaction):
         log.warning("Не удалось закрепить панель — сделайте это вручную")
 
     await interaction.response.send_message("Панель опубликована и закреплена.", ephemeral=True)
-
-
-@bot.tree.command(
-    name="clean_news_channel",
-    description="Удалить старые сообщения бота в канале news, кроме закреплённых",
-)
-async def clean_news_channel_cmd(interaction: discord.Interaction):
-    if interaction.user.id not in ADMIN_USER_IDS:
-        await interaction.response.send_message(
-            "Эта команда доступна только администраторам бота.", ephemeral=True
-        )
-        return
-
-    global _news_channel
-    if _news_channel is None:
-        _news_channel = await _resolve_news_channel()
-    if _news_channel is None:
-        await interaction.response.send_message("Канал news не найден.", ephemeral=True)
-        return
-
-    await interaction.response.defer(ephemeral=True)
-
-    pinned_ids = {m.id for m in await _news_channel.pins()}
-    deleted = await _news_channel.purge(
-        limit=None,
-        check=lambda m: m.author == bot.user and m.id not in pinned_ids,
-    )
-
-    await interaction.followup.send(
-        f"Удалено старых сообщений: {len(deleted)}. Панель настроек сохранена.",
-        ephemeral=True,
-    )
 
 
 @bot.tree.command(name="mysubscriptions", description="Показать текущие подписки на валюты")
@@ -717,6 +714,7 @@ async def on_ready():
         keepalive_ping_task.start()
 
     await _refresh_panel_on_startup()
+    await _clean_old_news_on_startup()
 
 
 if __name__ == "__main__":
