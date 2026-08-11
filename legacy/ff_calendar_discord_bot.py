@@ -5,12 +5,12 @@
 который сама Forex Factory отдаёт для EA/индикаторов MT4/MT5.
 Время в фиде — America/New_York (Eastern Time).
 
-- В канал news постятся ВСЕ high-impact новости за час до выхода.
-- Через панель с выпадающими меню в канале news пользователь выбирает
-  валюты (включая "Все валюты") и тайминг(и) уведомлений (5/15/30/60 мин).
-  Бот создаёт ему персональный тред внутри канала news и пишет туда
-  только события по выбранным валютам, в выбранное время. Подписки
-  хранятся в PostgreSQL.
+- В канале news больше НЕ постится никаких новостей — там только панель
+  настроек (выбор валют и тайминга уведомлений).
+- Через панель в канале news пользователь выбирает валюты и тайминг(и)
+  уведомлений (5/15/30/60 мин). Бот создаёт ему персональный тред внутри
+  канала news и пишет туда только события по выбранным валютам, в выбранное
+  время. Подписки хранятся в PostgreSQL.
 
 pip install requests python-dateutil pytz discord.py python-decouple asyncpg
 """
@@ -378,7 +378,9 @@ async def _notify_subscribers(e: dict, now: datetime) -> None:
 
         for lead_minutes in record["lead_minutes"]:
             lead_td = timedelta(minutes=lead_minutes)
-            window_start = lead_td - timedelta(seconds=CHECK_INTERVAL_SECONDS)
+            # окно чуть шире интервала проверки, чтобы не пропустить событие
+            # из-за дрейфа таймера; повторные посты исключает дедуп
+            window_start = lead_td - timedelta(seconds=2 * CHECK_INTERVAL_SECONDS)
             if not (window_start <= delta <= lead_td):
                 continue
 
@@ -640,10 +642,6 @@ async def keepalive_ping_task():
 
 @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
 async def check_and_post_task():
-    global _news_channel
-    if _news_channel is None:
-        _news_channel = await _resolve_news_channel()
-
     now = datetime.now(TARGET_TZ)
 
     impact_order = {"Low": 0, "Medium": 1, "High": 2, "Holiday": -1}
@@ -653,7 +651,8 @@ async def check_and_post_task():
         if impact_order.get(e.get("impact"), -1) < threshold:
             continue
 
-        # публикация только в персональные ветки, по индивидуальным таймингам пользователей
+        # персональные уведомления — по индивидуальным таймингам пользователей.
+        # В общий канал news ничего не постится: там только панель настроек.
         await _notify_subscribers(e, now)
 
 
