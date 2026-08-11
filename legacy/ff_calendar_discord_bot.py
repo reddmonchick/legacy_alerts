@@ -573,10 +573,9 @@ async def _refresh_panel_on_startup() -> None:
 
 async def _clean_old_news_on_startup() -> None:
     """
-    Одноразовая чистка при старте: удаляет в канале news все старые сообщения
-    бота (новости, оставшиеся до апдейта), кроме закреплённой панели настроек.
-    Бот больше не постит новости в этот канал, поэтому повторные старты
-    удалять уже нечего.
+    Чистка при старте: удаляет в канале news все старые сообщения бота
+    (новости, оставшиеся до апдейта). Панель настроек сохраняется по её
+    заголовку (не зависит от того, закреплена она или нет).
     """
     global _news_channel
     if _news_channel is None:
@@ -585,12 +584,14 @@ async def _clean_old_news_on_startup() -> None:
         log.warning("Канал news не найден — пропускаю очистку старых новостей")
         return
 
+    def _is_panel(m) -> bool:
+        return bool(m.embeds) and m.embeds[0].title == "📊 Экономический календарь"
+
     try:
-        pinned_ids = {m.id for m in await _news_channel.pins()}
         deleted = await _news_channel.purge(
             limit=None,
             bulk=False,
-            check=lambda m: m.author == bot.user and m.id not in pinned_ids,
+            check=lambda m: m.author == bot.user and not _is_panel(m),
         )
         if deleted:
             log.info("Очистка канала news: удалено %d старых сообщений", len(deleted))
